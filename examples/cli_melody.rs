@@ -34,7 +34,6 @@ fn create_melody_from_notes(note_strings: Vec<String>) -> Result<Melody, String>
     for note_str in note_strings {
         // let note = parse_note_from_string(&note_str)?;
         let interval = note_str.parse::<usize>().unwrap();
-        let i = interval::MINOR_SCALE[interval - 1];
         melody = melody.add_interval(
             interval::MINOR_SCALE[interval - 1],
             duration::quarter_note(),
