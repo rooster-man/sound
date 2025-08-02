@@ -25,7 +25,7 @@ enum NoteElement {
 struct Cli {
     /// Enhanced note notation with rests, sustains, and modal octave shifts
     #[arg(
-        help = "Enhanced note notation: digits 1-9 for scale positions, dots (.) for rests, dashes (-) extend notes. Octave shifts: ^ (up) and v (down) change register for all following notes. Examples: 12345 (notes 1-5), 1^234 (note 1 normal, then shift up, notes 2-4 higher), 1^23v45 (1 normal, 2-3 high, 4-5 back to normal)"
+        help = "Enhanced note notation: digits 1-9 for scale positions, dots (.) for rests, dashes (-) extend notes. Each symbol defaults to sixteenth note duration (use --duration to change). Octave shifts: ^ (up) and v (down) change register for all following notes. Examples: 12345 (notes 1-5), 1^234 (note 1 normal, then shift up, notes 2-4 higher)"
     )]
     notes: Vec<String>,
 
@@ -48,6 +48,11 @@ struct Cli {
     #[arg(short, long)]
     #[arg(help = "Play the melody in a continuous loop. Press Ctrl+C to stop")]
     r#loop: bool,
+
+    /// Base duration for each note symbol
+    #[arg(short, long, default_value = "sixteenth")]
+    #[arg(help = "Duration each note symbol represents: whole, half, quarter, eighth, sixteenth")]
+    duration: String,
 }
 
 // Configuration struct for melody generation
@@ -59,6 +64,7 @@ struct MelodyConfig {
     key: Key,
     bpm: u32,
     should_loop: bool,
+    base_duration: String,
 }
 
 impl Default for MelodyConfig {
@@ -79,6 +85,7 @@ impl Default for MelodyConfig {
             key: Key::new(Note::C, 4),
             bpm: 120,
             should_loop: false,
+            base_duration: "sixteenth".to_string(),
         }
     }
 }
@@ -197,13 +204,23 @@ fn parse_note_notation(note_strings: &[String]) -> Result<Vec<NoteElement>, Stri
 
 fn create_melody_config(cli: &Cli) -> Result<MelodyConfig, String> {
     println!(
-        "CLI args: scale={}, key={}, notes={:?}, bpm={}, loop={}",
-        cli.scale, cli.key, cli.notes, cli.bpm, cli.r#loop
+        "CLI args: scale={}, key={}, notes={:?}, bpm={}, loop={}, duration={}",
+        cli.scale, cli.key, cli.notes, cli.bpm, cli.r#loop, cli.duration
     );
 
     // Validate BPM range
     if cli.bpm == 0 || cli.bpm > 500 {
         return Err("BPM must be between 1 and 500".to_string());
+    }
+
+    // Validate duration
+    match cli.duration.to_lowercase().as_str() {
+        "whole" | "half" | "quarter" | "eighth" | "sixteenth" => {}
+        _ => {
+            return Err(
+                "Duration must be one of: whole, half, quarter, eighth, sixteenth".to_string(),
+            )
+        }
     }
 
     // Parse scale
@@ -236,19 +253,30 @@ fn create_melody_config(cli: &Cli) -> Result<MelodyConfig, String> {
         key,
         bpm: cli.bpm,
         should_loop: cli.r#loop,
+        base_duration: cli.duration.clone(),
     };
 
     Ok(config)
 }
 
-/// Calculate note durations based on BPM (quarter note = 1 beat)
-fn calculate_durations(bpm: u32) -> (Duration, Duration) {
+/// Calculate note durations based on BPM and base duration type
+fn calculate_durations(bpm: u32, base_duration: &str) -> (Duration, Duration) {
     let quarter_note_ms = 60_000 / bpm; // milliseconds per quarter note
-    let sixteenth_note_ms = quarter_note_ms / 4; // sixteenth note is 1/4 of quarter note
+    let sixteenth_note_ms = quarter_note_ms / 4; // sixteenth note for sustains
+
+    // Calculate base duration based on the specified type
+    let base_duration_ms = match base_duration.to_lowercase().as_str() {
+        "whole" => quarter_note_ms * 4,
+        "half" => quarter_note_ms * 2,
+        "quarter" => quarter_note_ms,
+        "eighth" => quarter_note_ms / 2,
+        "sixteenth" => quarter_note_ms / 4,
+        _ => quarter_note_ms / 4, // fallback to sixteenth
+    };
 
     (
-        Duration::from_millis(quarter_note_ms as u64), // quarter note duration
-        Duration::from_millis(sixteenth_note_ms as u64), // sixteenth note duration
+        Duration::from_millis(base_duration_ms as u64), // configurable base duration
+        Duration::from_millis(sixteenth_note_ms as u64), // sixteenth note for sustains
     )
 }
 
@@ -269,9 +297,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("✅ Successfully parsed melody configuration:");
             println!("  🎼 Scale: {}", config.scale_name);
             println!("  🎹 Key: {:?}", config.key.root);
+            println!("  ⏱️  Duration: {} notes", config.base_duration);
 
-            // Calculate durations based on BPM
-            let (_quarter_note_duration, sixteenth_note_duration) = calculate_durations(config.bpm);
+            // Calculate durations based on BPM and base duration
+            let (base_note_duration, sixteenth_note_duration) =
+                calculate_durations(config.bpm, &config.base_duration);
 
             // Build the melody once
             let mut melody = Melody::in_key(config.key);
@@ -305,8 +335,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         }
 
-                        // Calculate duration: base sixteenth note + sustains (all BPM-based)
-                        let base_duration = sixteenth_note_duration;
+                        // Calculate duration: configurable base duration + sustains (sixteenth notes)
+                        let base_duration = base_note_duration;
                         let sustain_duration = Duration::from_millis(
                             sixteenth_note_duration.as_millis() as u64 * sustain_count as u64,
                         );
@@ -318,12 +348,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         i = j;
                     }
                     NoteElement::Rest => {
-                        melody = melody.add_rest(sixteenth_note_duration);
+                        melody = melody.add_rest(base_note_duration);
                         i += 1;
                     }
                     NoteElement::Sustain => {
                         // Sustains without a preceding note are treated as rests
-                        melody = melody.add_rest(sixteenth_note_duration);
+                        melody = melody.add_rest(base_note_duration);
                         i += 1;
                     }
                 }
@@ -332,7 +362,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Calculate sleep duration for one iteration
             let total_elements = config.note_elements.len();
             let iteration_duration_ms =
-                total_elements as u64 * sixteenth_note_duration.as_millis() as u64;
+                total_elements as u64 * base_note_duration.as_millis() as u64;
 
             // Play the melody (looping if requested)
             if config.should_loop {
@@ -357,16 +387,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("");
             eprintln!("💡 Examples:");
             eprintln!(
-                "   cargo run -- 12345 --scale major --bpm 120     # Notes 1,2,3,4,5 at 120 BPM"
+                "   cargo run -- 12345 --scale major --bpm 120     # Notes 1,2,3,4,5 at 120 BPM (sixteenth notes)"
             );
             eprintln!(
-                "   cargo run -- 1^234 --scale minor --key A --loop  # Note 1 normal, 2-4 up one octave (looping)"
+                "   cargo run -- 1^234 --scale minor --key A --duration quarter  # Quarter note duration"
             );
             eprintln!(
-                "   cargo run -- 1v23^45 --scale dorian --key D     # Note 1 low, 2-3 low, 4-5 high"
+                "   cargo run -- 1v23^45 --scale dorian --key D --duration eighth  # Eighth note duration"
             );
             eprintln!(
-                "   cargo run -- 12^^345vv67 --scale japanese --bpm 100 --loop  # Modal octave shifts"
+                "   cargo run -- 12345 --duration whole --bpm 60 --loop  # Very slow with whole notes"
             );
             eprintln!("");
             eprintln!("Run 'cargo run -- --help' for more information.");
