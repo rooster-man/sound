@@ -59,7 +59,7 @@ fn get_scale_by_name(name: &str) -> Result<(&'static [i32], String), String> {
 
         // Pentatonic
         "pentatonic" | "penta" => Ok((&interval::PENTATONIC_MAJOR, "Pentatonic Major".to_string())),
-        "pentatonic_minor" | "penta_minor" => {
+        "minor_pentatonic" | "minor_penta" => {
             Ok((&interval::PENTATONIC_MINOR, "Pentatonic Minor".to_string()))
         }
         "blues" => Ok((&interval::BLUES_MINOR, "Blues Minor".to_string())),
