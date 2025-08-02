@@ -3,7 +3,6 @@ use clap::Parser;
 use rodio::{OutputStreamBuilder, Sink};
 use std::time::Duration;
 
-use sound::duration::duration;
 use sound::interval::interval;
 use sound::{Key, Melody, Note};
 
@@ -39,6 +38,11 @@ struct Cli {
     #[arg(short, long, default_value = "C")]
     #[arg(help = "Root note: C, D, E, F, G, A, B (with optional # for sharps)")]
     key: String,
+
+    /// Tempo in beats per minute (quarter note = 1 beat)
+    #[arg(short, long, default_value = "120")]
+    #[arg(help = "Tempo in BPM (beats per minute). Higher = faster, lower = slower")]
+    bpm: u32,
 }
 
 // Configuration struct for melody generation
@@ -48,6 +52,7 @@ struct MelodyConfig {
     scale_intervals: &'static [i32],
     note_elements: Vec<NoteElement>,
     key: Key,
+    bpm: u32,
 }
 
 impl Default for MelodyConfig {
@@ -66,6 +71,7 @@ impl Default for MelodyConfig {
                 NoteElement::Note(8),
             ], // Default C major scale
             key: Key::new(Note::C, 4),
+            bpm: 120,
         }
     }
 }
@@ -174,9 +180,14 @@ fn parse_note_notation(note_strings: &[String]) -> Result<Vec<NoteElement>, Stri
 
 fn create_melody_config(cli: &Cli) -> Result<MelodyConfig, String> {
     println!(
-        "CLI args: scale={}, key={}, notes={:?}",
-        cli.scale, cli.key, cli.notes
+        "CLI args: scale={}, key={}, notes={:?}, bpm={}",
+        cli.scale, cli.key, cli.notes, cli.bpm
     );
+
+    // Validate BPM range
+    if cli.bpm == 0 || cli.bpm > 500 {
+        return Err("BPM must be between 1 and 500".to_string());
+    }
 
     // Parse scale
     let (scale_intervals, scale_name) = get_scale_by_name(&cli.scale)?;
@@ -206,9 +217,21 @@ fn create_melody_config(cli: &Cli) -> Result<MelodyConfig, String> {
         scale_intervals,
         note_elements,
         key,
+        bpm: cli.bpm,
     };
 
     Ok(config)
+}
+
+/// Calculate note durations based on BPM (quarter note = 1 beat)
+fn calculate_durations(bpm: u32) -> (Duration, Duration) {
+    let quarter_note_ms = 60_000 / bpm; // milliseconds per quarter note
+    let sixteenth_note_ms = quarter_note_ms / 4; // sixteenth note is 1/4 of quarter note
+
+    (
+        Duration::from_millis(quarter_note_ms as u64), // quarter note duration
+        Duration::from_millis(sixteenth_note_ms as u64), // sixteenth note duration
+    )
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -229,8 +252,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("  🎼 Scale: {}", config.scale_name);
             println!("  🎹 Key: {:?}", config.key.root);
 
+            // Calculate durations based on BPM
+            let (_quarter_note_duration, sixteenth_note_duration) = calculate_durations(config.bpm);
+
             // Create and play the custom melody
-            println!("\n🎶 Playing your custom melody...");
+            println!("\n🎶 Playing your custom melody at {} BPM...", config.bpm);
             let mut melody = Melody::in_key(config.key);
             let mut i = 0;
 
@@ -260,10 +286,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         }
 
-                        // Calculate duration: base sixteenth note + sustains
-                        let base_duration = duration::sixteenth_note();
+                        // Calculate duration: base sixteenth note + sustains (all BPM-based)
+                        let base_duration = sixteenth_note_duration;
                         let sustain_duration = Duration::from_millis(
-                            duration::sixteenth_note().as_millis() as u64 * sustain_count as u64,
+                            sixteenth_note_duration.as_millis() as u64 * sustain_count as u64,
                         );
                         let total_duration = base_duration + sustain_duration;
 
@@ -273,12 +299,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         i = j;
                     }
                     NoteElement::Rest => {
-                        melody = melody.add_rest(duration::sixteenth_note());
+                        melody = melody.add_rest(sixteenth_note_duration);
                         i += 1;
                     }
                     NoteElement::Sustain => {
                         // Sustains without a preceding note are treated as rests
-                        melody = melody.add_rest(duration::sixteenth_note());
+                        melody = melody.add_rest(sixteenth_note_duration);
                         i += 1;
                     }
                 }
@@ -286,9 +312,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             melody.play(&sink, sample_rate);
 
-            // Calculate sleep duration based on elements (more accurate now)
+            // Calculate sleep duration based on elements (BPM-accurate)
             let total_elements = config.note_elements.len();
-            let duration_ms = total_elements as u64 * duration::sixteenth_note().as_millis() as u64;
+            let duration_ms = total_elements as u64 * sixteenth_note_duration.as_millis() as u64;
             std::thread::sleep(Duration::from_millis(duration_ms));
 
             println!("✨ Custom melody complete!");
@@ -297,13 +323,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("❌ Error: {}", error);
             eprintln!("");
             eprintln!("💡 Examples:");
-            eprintln!("   cargo run -- 12345 --scale major         # Notes 1,2,3,4,5 (consecutive digits)");
-            eprintln!("   cargo run -- 1..35 --scale minor --key A    # Note 1, two rests, note 3, note 5");
             eprintln!(
-                "   cargo run -- 12-4 --scale dorian --key D    # Note 1, note 2 extended, note 4"
+                "   cargo run -- 12345 --scale major --bpm 120     # Notes 1,2,3,4,5 at 120 BPM"
             );
             eprintln!(
-                "   cargo run -- 1.2.3.4.5 --scale japanese    # Notes with rests between each"
+                "   cargo run -- 1..35 --scale minor --key A --bpm 80  # Slow tempo (80 BPM)"
+            );
+            eprintln!(
+                "   cargo run -- 12-4 --scale dorian --key D --bpm 160 # Fast tempo (160 BPM)"
+            );
+            eprintln!(
+                "   cargo run -- 1.2.3.4.5 --scale japanese --bpm 100 # Notes with rests at 100 BPM"
             );
             eprintln!("");
             eprintln!("Run 'cargo run -- --help' for more information.");
