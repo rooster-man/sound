@@ -7,19 +7,125 @@ use sound::duration::duration;
 use sound::interval::interval;
 use sound::{Key, Melody, Note};
 
-fn process_args(args: Vec<String>) -> Result<Vec<String>, String> {
+// Configuration struct for melody generation
+#[derive(Debug)]
+struct MelodyConfig {
+    scale_name: String,
+    scale_intervals: &'static [i32],
+    note_positions: Vec<usize>,
+    key: Key,
+}
+
+impl Default for MelodyConfig {
+    fn default() -> Self {
+        Self {
+            scale_name: "major".to_string(),
+            scale_intervals: &interval::MAJOR_SCALE,
+            note_positions: vec![1, 2, 3, 4, 5, 6, 7, 8], // Default C major scale
+            key: Key::new(Note::C, 4),
+        }
+    }
+}
+
+fn get_scale_by_name(name: &str) -> Result<(&'static [i32], String), String> {
+    match name.to_lowercase().as_str() {
+        // Basic scales
+        "major" => Ok((&interval::MAJOR_SCALE, "Major".to_string())),
+        "minor" => Ok((&interval::MINOR_SCALE, "Natural Minor".to_string())),
+
+        // Pentatonic
+        "pentatonic" | "penta" => Ok((&interval::PENTATONIC_MAJOR, "Pentatonic Major".to_string())),
+        "pentatonic_minor" | "penta_minor" => {
+            Ok((&interval::PENTATONIC_MINOR, "Pentatonic Minor".to_string()))
+        }
+        "blues" => Ok((&interval::BLUES_MINOR, "Blues Minor".to_string())),
+
+        // Church modes
+        "dorian" => Ok((&interval::DORIAN, "Dorian".to_string())),
+        "phrygian" => Ok((&interval::PHRYGIAN, "Phrygian".to_string())),
+        "lydian" => Ok((&interval::LYDIAN, "Lydian".to_string())),
+        "mixolydian" => Ok((&interval::MIXOLYDIAN, "Mixolydian".to_string())),
+        "locrian" => Ok((&interval::LOCRIAN, "Locrian".to_string())),
+
+        // Exotic scales
+        "harmonic_minor" | "harmonic" => {
+            Ok((&interval::HARMONIC_MINOR, "Harmonic Minor".to_string()))
+        }
+        "hungarian" => Ok((&interval::HUNGARIAN_MINOR, "Hungarian Minor".to_string())),
+        "japanese" => Ok((
+            &interval::JAPANESE_HIRAJOSHI,
+            "Japanese Hirajoshi".to_string(),
+        )),
+        "arabic" => Ok((&interval::ARABIC_MAQAM, "Arabic Maqam".to_string())),
+        "spanish" => Ok((&interval::SPANISH_GYPSY, "Spanish Gypsy".to_string())),
+        "whole_tone" | "wholetone" => Ok((&interval::WHOLE_TONE, "Whole Tone".to_string())),
+        "chromatic" => Ok((&interval::CHROMATIC, "Chromatic".to_string())),
+
+        _ => Err(format!(
+            "Unknown scale: {}. Try: major, minor, dorian, blues, japanese, etc.",
+            name
+        )),
+    }
+}
+
+fn parse_note_from_string(note_str: &str) -> Result<Note, String> {
+    match note_str.to_uppercase().as_str() {
+        "C" => Ok(Note::C),
+        "CS" | "C#" => Ok(Note::Cs),
+        "D" => Ok(Note::D),
+        "DS" | "D#" => Ok(Note::Ds),
+        "E" => Ok(Note::E),
+        "F" => Ok(Note::F),
+        "FS" | "F#" => Ok(Note::Fs),
+        "G" => Ok(Note::G),
+        "GS" | "G#" => Ok(Note::Gs),
+        "A" => Ok(Note::A),
+        "AS" | "A#" => Ok(Note::As),
+        "B" => Ok(Note::B),
+        _ => Err(format!("Unknown note: {}", note_str)),
+    }
+}
+
+fn process_args(args: Vec<String>) -> Result<MelodyConfig, String> {
     println!("Args received: {:?}", args);
 
-    // Check if we have enough arguments (program name + at least 1 argument)
     if args.len() < 2 {
-        return Err("No arguments provided. Usage: program \"arg1|arg2|arg3\"".to_string());
+        return Err("Usage: program \"scale:major|key:C|notes:1,2,3,4,5\"".to_string());
     }
 
-    // Split the argument by "|" and convert to owned strings
-    let parts: Vec<String> = args[1].split("|").map(|s| s.to_string()).collect();
+    let mut config = MelodyConfig::default();
+    let parts: Vec<String> = args[1].split("|").map(|s| s.trim().to_string()).collect();
     println!("Parsed parts: {:?}", parts);
 
-    Ok(parts)
+    for part in parts {
+        if part.starts_with("scale:") {
+            let scale_name = &part[6..];
+            let (scale_intervals, full_name) = get_scale_by_name(scale_name)?;
+            config.scale_name = full_name;
+            config.scale_intervals = scale_intervals;
+        } else if part.starts_with("key:") {
+            let key_name = &part[4..];
+            let note = parse_note_from_string(key_name)?;
+            config.key = Key::new(note, 4);
+        } else if part.starts_with("notes:") {
+            let notes_str = &part[6..];
+            let positions: Result<Vec<usize>, _> = notes_str
+                .split(",")
+                .map(|s| s.trim().parse::<usize>())
+                .collect();
+            config.note_positions =
+                positions.map_err(|e| format!("Invalid note positions: {}", e))?;
+        } else {
+            // Fallback: treat as comma-separated note positions
+            let positions: Result<Vec<usize>, _> =
+                part.split(",").map(|s| s.trim().parse::<usize>()).collect();
+            if let Ok(pos) = positions {
+                config.note_positions = pos;
+            }
+        }
+    }
+
+    Ok(config)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -35,98 +141,46 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Process command line arguments if provided
     match process_args(args) {
-        Ok(parts) => {
-            println!("✅ Successfully parsed {} argument parts", parts.len());
-            // TODO: Use the parsed parts for something (e.g., configure melody)
-            for (i, part) in parts.iter().enumerate() {
-                println!("  Part {}: {}", i + 1, part);
+        Ok(config) => {
+            println!("✅ Successfully parsed melody configuration:");
+            println!("  🎼 Scale: {}", config.scale_name);
+            println!("  🎹 Key: {:?}", config.key.root);
+            println!("  🎵 Note positions: {:?}", config.note_positions);
+
+            // Create and play the custom melody
+            println!("\n🎶 Playing your custom melody...");
+            let mut melody = Melody::in_key(config.key);
+
+            for &position in &config.note_positions {
+                if position == 0 || position > config.scale_intervals.len() {
+                    println!(
+                        "⚠️  Warning: Note position {} is out of range for this scale",
+                        position
+                    );
+                    continue;
+                }
+                let interval = config.scale_intervals[position - 1];
+                melody = melody.add_interval(interval, duration::quarter_note());
             }
+
+            melody.play(&sink, sample_rate);
+            let duration_ms = config.note_positions.len() as u64 * 300;
+            std::thread::sleep(Duration::from_millis(duration_ms));
+
+            println!("✨ Custom melody complete!");
+
+            return Ok(()); // Exit early, don't run default demo
         }
         Err(error) => {
             println!("⚠️  Argument parsing error: {}", error);
             println!("🎵 Running default demo instead...");
+            println!("💡 Examples:");
+            println!("   cargo run \"scale:major|notes:1,2,3,4,5,6,7,8\"");
+            println!("   cargo run \"scale:minor|key:A|notes:1,3,5,8\"");
+            println!("   cargo run \"scale:dorian|key:D|notes:1,2,3,5,6\"");
+            println!("   cargo run \"scale:japanese|notes:1,2,3,4,5\"");
         }
     }
-
-    println!("🎹 Key-Based Musical Composer Demo 🎹\n");
-
-    // Example 1: Major scale using intervals in C major
-    println!("Playing C major scale using intervals...");
-    let c_major_key = Key::new(Note::C, 4);
-    let c_major_scale =
-        Melody::in_key(c_major_key).add_intervals(&interval::MAJOR_SCALE, duration::quarter_note());
-
-    c_major_scale.play(&sink, sample_rate);
-    std::thread::sleep(Duration::from_millis(2200));
-
-    // Example 2: Same scale pattern in different key (F major)
-    println!("Playing F major scale using the same intervals...");
-    let f_major_key = Key::new(Note::F, 4);
-    let f_major_scale =
-        Melody::in_key(f_major_key).add_intervals(&interval::MAJOR_SCALE, duration::quarter_note());
-
-    f_major_scale.play(&sink, sample_rate);
-    std::thread::sleep(Duration::from_millis(2200));
-
-    // Example 3: Minor scale in A minor
-    println!("Playing A minor scale...");
-    let a_minor_key = Key::new(Note::A, 4);
-    let a_minor_scale =
-        Melody::in_key(a_minor_key).add_intervals(&interval::MINOR_SCALE, duration::quarter_note());
-
-    a_minor_scale.play(&sink, sample_rate);
-    std::thread::sleep(Duration::from_millis(2200));
-
-    // Example 4: Chord progression using intervals
-    println!("Playing chord progression using intervals...");
-    let chord_progression = Melody::in_key(Key::new(Note::C, 4))
-        // C major chord (0, 4, 7)
-        .add_intervals(&interval::MAJOR_TRIAD, duration::eighth_note())
-        .add_rest(duration::eighth_note())
-        // F major chord - switch to F and play major triad
-        .set_key(Key::new(Note::F, 4))
-        .add_intervals(&interval::MAJOR_TRIAD, duration::eighth_note())
-        .add_rest(duration::eighth_note())
-        // G major chord
-        .set_key(Key::new(Note::G, 4))
-        .add_intervals(&interval::MAJOR_TRIAD, duration::eighth_note())
-        .add_rest(duration::eighth_note())
-        // Back to C major
-        .set_key(Key::new(Note::C, 4))
-        .add_interval(interval::ROOT, duration::quarter_note())
-        .add_interval(interval::MAJOR_THIRD, duration::quarter_note())
-        .add_interval(interval::PERFECT_FIFTH, duration::half_note());
-
-    chord_progression.play(&sink, sample_rate);
-    std::thread::sleep(Duration::from_millis(3000));
-
-    // Example 5: Simple melody using individual intervals
-    println!("Playing simple melody using individual intervals...");
-    let simple_melody = Melody::in_key(Key::new(Note::C, 4))
-        .add_interval(interval::ROOT, duration::quarter_note()) // C
-        .add_interval(interval::MAJOR_THIRD, duration::quarter_note()) // E
-        .add_interval(interval::PERFECT_FIFTH, duration::quarter_note()) // G
-        .add_interval(interval::OCTAVE, duration::quarter_note()) // C (higher)
-        .add_rest(duration::quarter_note())
-        .add_interval(interval::MAJOR_SEVENTH, duration::quarter_note()) // B
-        .add_interval(interval::PERFECT_FIFTH, duration::quarter_note()) // G
-        .add_interval(interval::MAJOR_THIRD, duration::quarter_note()) // E
-        .add_interval(interval::ROOT, duration::half_note()); // C
-
-    simple_melody.play(&sink, sample_rate);
-    std::thread::sleep(Duration::from_millis(2500));
-
-    // Example 6: Pentatonic scale
-    println!("Playing C major pentatonic scale...");
-    let pentatonic = Melody::in_key(Key::new(Note::C, 4))
-        .add_intervals(&interval::PENTATONIC_MAJOR, duration::quarter_note());
-
-    pentatonic.play(&sink, sample_rate);
-    std::thread::sleep(Duration::from_millis(1800));
-
-    println!("\n✨ Key-based demo complete! ✨");
-    println!("🎼 Now you can compose in any key using intervals!");
-    println!("🎵 Try different keys and the same interval patterns will transpose automatically!");
 
     Ok(())
 }
