@@ -230,3 +230,6 @@ Perfect for:
 - Game audio programming
 - Educational music applications
 - Rapid prototyping of musical ideas
+
+lotr example:
+cargo run -- 123---5---3---2---1-------3---5---6----8-7-5----3-----432----
