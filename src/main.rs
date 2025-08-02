@@ -7,18 +7,28 @@ use sound::duration::duration;
 use sound::interval::interval;
 use sound::{Key, Melody, Note};
 
+/// Represents different musical elements in our enhanced notation
+#[derive(Debug, Clone)]
+enum NoteElement {
+    /// A note at a specific scale position
+    Note(usize),
+    /// A sixteenth-note rest
+    Rest,
+    /// A sixteenth-note sustain (extends the previous note)
+    Sustain,
+}
+
 /// Sound CLI - Generate and play melodies with customizable scales and keys
 #[derive(Parser, Debug)]
 #[command(name = "sound")]
 #[command(about = "A CLI tool for generating and playing musical melodies")]
 #[command(version = "0.1.0")]
 struct Cli {
-    /// Note positions in the scale (1-based), comma-separated
+    /// Enhanced note notation with rests and sustains
     #[arg(
-        value_delimiter = ',',
-        help = "Comma-separated note positions (e.g., 1,3,5,8). Defaults to full scale if not provided."
+        help = "Enhanced note notation: numbers for scale positions (sixteenth-note duration), dots (.) for rests, dashes (-) extend the previous note. Examples: '1..3-5' (note 1, two rests, note 3 extended, note 5), '1--2' (note 1 extended by 2 sixteenths, note 2). Space-separated: '1 2.. 3-'"
     )]
-    notes: Vec<usize>,
+    notes: Vec<String>,
 
     /// Scale to use for the melody
     #[arg(short, long, default_value = "major")]
@@ -36,7 +46,7 @@ struct Cli {
 struct MelodyConfig {
     scale_name: String,
     scale_intervals: &'static [i32],
-    note_positions: Vec<usize>,
+    note_elements: Vec<NoteElement>,
     key: Key,
 }
 
@@ -45,7 +55,16 @@ impl Default for MelodyConfig {
         Self {
             scale_name: "major".to_string(),
             scale_intervals: &interval::MAJOR_SCALE,
-            note_positions: vec![1, 2, 3, 4, 5, 6, 7, 8], // Default C major scale
+            note_elements: vec![
+                NoteElement::Note(1),
+                NoteElement::Note(2),
+                NoteElement::Note(3),
+                NoteElement::Note(4),
+                NoteElement::Note(5),
+                NoteElement::Note(6),
+                NoteElement::Note(7),
+                NoteElement::Note(8),
+            ], // Default C major scale
             key: Key::new(Note::C, 4),
         }
     }
@@ -110,6 +129,88 @@ fn parse_note_from_string(note_str: &str) -> Result<Note, String> {
     }
 }
 
+/// Parse enhanced note notation into a sequence of NoteElement
+/// Examples: "1..3-5" -> [Note(1), Rest, Rest, Note(3), Sustain, Note(5)]
+fn parse_note_notation(note_strings: &[String]) -> Result<Vec<NoteElement>, String> {
+    let mut elements = Vec::new();
+
+    for note_string in note_strings {
+        let mut chars = note_string.chars().peekable();
+        let mut current_number = String::new();
+
+        while let Some(ch) = chars.next() {
+            match ch {
+                '0'..='9' => {
+                    current_number.push(ch);
+                }
+                '.' => {
+                    // If we have a number, add it first
+                    if !current_number.is_empty() {
+                        let position: usize = current_number
+                            .parse()
+                            .map_err(|_| format!("Invalid note position: {}", current_number))?;
+                        if position == 0 {
+                            return Err("Note positions must be 1 or greater".to_string());
+                        }
+                        elements.push(NoteElement::Note(position));
+                        current_number.clear();
+                    }
+                    // Add a rest
+                    elements.push(NoteElement::Rest);
+                }
+                '-' => {
+                    // If we have a number, add it first
+                    if !current_number.is_empty() {
+                        let position: usize = current_number
+                            .parse()
+                            .map_err(|_| format!("Invalid note position: {}", current_number))?;
+                        if position == 0 {
+                            return Err("Note positions must be 1 or greater".to_string());
+                        }
+                        elements.push(NoteElement::Note(position));
+                        current_number.clear();
+                    }
+                    // Add a sustain
+                    elements.push(NoteElement::Sustain);
+                }
+                ' ' | '\t' => {
+                    // Whitespace - if we have a number, add it
+                    if !current_number.is_empty() {
+                        let position: usize = current_number
+                            .parse()
+                            .map_err(|_| format!("Invalid note position: {}", current_number))?;
+                        if position == 0 {
+                            return Err("Note positions must be 1 or greater".to_string());
+                        }
+                        elements.push(NoteElement::Note(position));
+                        current_number.clear();
+                    }
+                }
+                _ => {
+                    return Err(format!("Invalid character '{}' in note notation. Use only numbers, dots (.), and dashes (-)", ch));
+                }
+            }
+        }
+
+        // Add any remaining number
+        if !current_number.is_empty() {
+            let position: usize = current_number
+                .parse()
+                .map_err(|_| format!("Invalid note position: {}", current_number))?;
+            if position == 0 {
+                return Err("Note positions must be 1 or greater".to_string());
+            }
+            elements.push(NoteElement::Note(position));
+        }
+    }
+
+    if elements.is_empty() {
+        return Err("No notes provided".to_string());
+    }
+
+    Ok(elements)
+}
+
 fn create_melody_config(cli: &Cli) -> Result<MelodyConfig, String> {
     println!(
         "CLI args: scale={}, key={}, notes={:?}",
@@ -123,17 +224,26 @@ fn create_melody_config(cli: &Cli) -> Result<MelodyConfig, String> {
     let note = parse_note_from_string(&cli.key)?;
     let key = Key::new(note, 4);
 
-    // Use default notes if none provided (full scale)
-    let note_positions = if cli.notes.is_empty() {
-        vec![1, 2, 3, 4, 5, 6, 7, 8]
+    // Parse note elements or use default
+    let note_elements = if cli.notes.is_empty() {
+        vec![
+            NoteElement::Note(1),
+            NoteElement::Note(2),
+            NoteElement::Note(3),
+            NoteElement::Note(4),
+            NoteElement::Note(5),
+            NoteElement::Note(6),
+            NoteElement::Note(7),
+            NoteElement::Note(8),
+        ]
     } else {
-        cli.notes.clone()
+        parse_note_notation(&cli.notes)?
     };
 
     let config = MelodyConfig {
         scale_name,
         scale_intervals,
-        note_positions,
+        note_elements,
         key,
     };
 
@@ -157,26 +267,68 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("✅ Successfully parsed melody configuration:");
             println!("  🎼 Scale: {}", config.scale_name);
             println!("  🎹 Key: {:?}", config.key.root);
-            println!("  🎵 Note positions: {:?}", config.note_positions);
+            println!("  🎵 Note elements: {:?}", config.note_elements);
 
             // Create and play the custom melody
             println!("\n🎶 Playing your custom melody...");
             let mut melody = Melody::in_key(config.key);
+            let mut i = 0;
 
-            for &position in &config.note_positions {
-                if position == 0 || position > config.scale_intervals.len() {
-                    println!(
-                        "⚠️  Warning: Note position {} is out of range for this scale",
-                        position
-                    );
-                    continue;
+            while i < config.note_elements.len() {
+                match &config.note_elements[i] {
+                    NoteElement::Note(position) => {
+                        if *position == 0 || *position > config.scale_intervals.len() {
+                            println!(
+                                "⚠️  Warning: Note position {} is out of range for this scale",
+                                position
+                            );
+                            i += 1;
+                            continue;
+                        }
+                        let interval = config.scale_intervals[position - 1];
+
+                        // Count sustains that follow this note
+                        let mut sustain_count = 0;
+                        let mut j = i + 1;
+                        while j < config.note_elements.len() {
+                            match &config.note_elements[j] {
+                                NoteElement::Sustain => {
+                                    sustain_count += 1;
+                                    j += 1;
+                                }
+                                _ => break,
+                            }
+                        }
+
+                        // Calculate duration: base sixteenth note + sustains
+                        let base_duration = duration::sixteenth_note();
+                        let sustain_duration = Duration::from_millis(
+                            duration::sixteenth_note().as_millis() as u64 * sustain_count as u64,
+                        );
+                        let total_duration = base_duration + sustain_duration;
+
+                        melody = melody.add_interval(interval, total_duration);
+
+                        // Skip past the sustains we just processed
+                        i = j;
+                    }
+                    NoteElement::Rest => {
+                        melody = melody.add_rest(duration::sixteenth_note());
+                        i += 1;
+                    }
+                    NoteElement::Sustain => {
+                        // Sustains without a preceding note are treated as rests
+                        melody = melody.add_rest(duration::sixteenth_note());
+                        i += 1;
+                    }
                 }
-                let interval = config.scale_intervals[position - 1];
-                melody = melody.add_interval(interval, duration::quarter_note());
             }
 
             melody.play(&sink, sample_rate);
-            let duration_ms = config.note_positions.len() as u64 * 300;
+
+            // Calculate sleep duration based on elements (more accurate now)
+            let total_elements = config.note_elements.len();
+            let duration_ms = total_elements as u64 * duration::sixteenth_note().as_millis() as u64;
             std::thread::sleep(Duration::from_millis(duration_ms));
 
             println!("✨ Custom melody complete!");
@@ -185,10 +337,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("❌ Error: {}", error);
             eprintln!("");
             eprintln!("💡 Examples:");
-            eprintln!("   cargo run -- 1,2,3,4,5,6,7,8 --scale major");
-            eprintln!("   cargo run -- 1,3,5,8 --scale minor --key A");
-            eprintln!("   cargo run -- 1,2,3,5,6 --scale dorian --key D");
-            eprintln!("   cargo run -- 1,2,3,4,5 --scale japanese");
+            eprintln!("   cargo run -- 1..3-5 --scale major        # Note 1, two rests, note 3 extended, note 5");
+            eprintln!("   cargo run -- 1--2.4 --scale minor --key A  # Note 1 extended (2 sixteenths), note 2, rest, note 4");
+            eprintln!("   cargo run -- '1 2.. 3-' --scale dorian --key D  # Note 1, note 2, two rests, note 3 extended");
+            eprintln!(
+                "   cargo run -- 1.2.3.4.5 --scale japanese    # Notes with rests between each"
+            );
             eprintln!("");
             eprintln!("Run 'cargo run -- --help' for more information.");
             std::process::exit(1);
