@@ -1,11 +1,33 @@
 //! Demo application for the sound library
+use clap::Parser;
 use rodio::{OutputStreamBuilder, Sink};
-use std::env;
 use std::time::Duration;
 
 use sound::duration::duration;
 use sound::interval::interval;
 use sound::{Key, Melody, Note};
+
+/// Sound CLI - Generate and play melodies with customizable scales and keys
+#[derive(Parser, Debug)]
+#[command(name = "sound")]
+#[command(about = "A CLI tool for generating and playing musical melodies")]
+#[command(version = "0.1.0")]
+struct Cli {
+    /// Scale to use for the melody
+    #[arg(short, long, default_value = "major")]
+    #[arg(help = "Scale: major, minor, dorian, blues, japanese, etc.")]
+    scale: String,
+
+    /// Key/root note for the melody
+    #[arg(short, long, default_value = "C")]
+    #[arg(help = "Root note: C, D, E, F, G, A, B (with optional # for sharps)")]
+    key: String,
+
+    /// Note positions in the scale (1-based)
+    #[arg(short, long, value_delimiter = ',', default_values_t = vec![1, 2, 3, 4, 5, 6, 7, 8])]
+    #[arg(help = "Comma-separated list of note positions in the scale (e.g., 1,3,5,8)")]
+    notes: Vec<usize>,
+}
 
 // Configuration struct for melody generation
 #[derive(Debug)]
@@ -86,49 +108,38 @@ fn parse_note_from_string(note_str: &str) -> Result<Note, String> {
     }
 }
 
-fn process_args(args: Vec<String>) -> Result<MelodyConfig, String> {
-    println!("Args received: {:?}", args);
+fn create_melody_config(cli: &Cli) -> Result<MelodyConfig, String> {
+    println!(
+        "CLI args: scale={}, key={}, notes={:?}",
+        cli.scale, cli.key, cli.notes
+    );
 
-    if args.len() < 2 {
-        return Err("Usage: program \"scale:major|key:C|notes:1,2,3,4,5\"".to_string());
+    // Parse scale
+    let (scale_intervals, scale_name) = get_scale_by_name(&cli.scale)?;
+
+    // Parse key/root note
+    let note = parse_note_from_string(&cli.key)?;
+    let key = Key::new(note, 4);
+
+    // Validate note positions
+    if cli.notes.is_empty() {
+        return Err("At least one note position must be provided".to_string());
     }
 
-    let mut config = MelodyConfig::default();
-    let parts: Vec<String> = args[1].split("|").map(|s| s.trim().to_string()).collect();
-    println!("Parsed parts: {:?}", parts);
-
-    for part in parts {
-        if part.starts_with("scale:") {
-            let scale_name = &part[6..];
-            let (scale_intervals, full_name) = get_scale_by_name(scale_name)?;
-            config.scale_name = full_name;
-            config.scale_intervals = scale_intervals;
-        } else if part.starts_with("key:") {
-            let key_name = &part[4..];
-            let note = parse_note_from_string(key_name)?;
-            config.key = Key::new(note, 4);
-        } else if part.starts_with("notes:") {
-            let notes_str = &part[6..];
-            let positions: Result<Vec<usize>, _> = notes_str
-                .split(",")
-                .map(|s| s.trim().parse::<usize>())
-                .collect();
-            config.note_positions =
-                positions.map_err(|e| format!("Invalid note positions: {}", e))?;
-        } else {
-            // Fallback: treat as comma-separated note positions
-            let positions: Result<Vec<usize>, _> =
-                part.split(",").map(|s| s.trim().parse::<usize>()).collect();
-            if let Ok(pos) = positions {
-                config.note_positions = pos;
-            }
-        }
-    }
+    let config = MelodyConfig {
+        scale_name,
+        scale_intervals,
+        note_positions: cli.notes.clone(),
+        key,
+    };
 
     Ok(config)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Parse command line arguments
+    let cli = Cli::parse();
+
     // Set up audio output
     let stream_handle =
         OutputStreamBuilder::open_default_stream().expect("Failed to open audio stream");
@@ -136,11 +147,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let sample_rate = 44100;
 
-    // get cli args
-    let args: Vec<String> = env::args().collect();
-
-    // Process command line arguments if provided
-    match process_args(args) {
+    // Create melody configuration from CLI arguments
+    match create_melody_config(&cli) {
         Ok(config) => {
             println!("✅ Successfully parsed melody configuration:");
             println!("  🎼 Scale: {}", config.scale_name);
@@ -168,17 +176,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             std::thread::sleep(Duration::from_millis(duration_ms));
 
             println!("✨ Custom melody complete!");
-
-            return Ok(()); // Exit early, don't run default demo
         }
         Err(error) => {
-            println!("⚠️  Argument parsing error: {}", error);
-            println!("🎵 Running default demo instead...");
-            println!("💡 Examples:");
-            println!("   cargo run \"scale:major|notes:1,2,3,4,5,6,7,8\"");
-            println!("   cargo run \"scale:minor|key:A|notes:1,3,5,8\"");
-            println!("   cargo run \"scale:dorian|key:D|notes:1,2,3,5,6\"");
-            println!("   cargo run \"scale:japanese|notes:1,2,3,4,5\"");
+            eprintln!("❌ Error: {}", error);
+            eprintln!("");
+            eprintln!("💡 Examples:");
+            eprintln!("   cargo run -- --scale major --notes 1,2,3,4,5,6,7,8");
+            eprintln!("   cargo run -- --scale minor --key A --notes 1,3,5,8");
+            eprintln!("   cargo run -- --scale dorian --key D --notes 1,2,3,5,6");
+            eprintln!("   cargo run -- --scale japanese --notes 1,2,3,4,5");
+            eprintln!("");
+            eprintln!("Run 'cargo run -- --help' for more information.");
+            std::process::exit(1);
         }
     }
 
