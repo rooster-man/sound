@@ -1,0 +1,15 @@
+[package]
+name = "sound"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "sound"
+path = "src/lib.rs"
+
+[[bin]]
+name = "sound"
+path = "src/main.rs"
+
+[dependencies]
+rodio = "0.21.1"
