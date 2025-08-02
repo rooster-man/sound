@@ -13,6 +13,13 @@ use sound::{Key, Melody, Note};
 #[command(about = "A CLI tool for generating and playing musical melodies")]
 #[command(version = "0.1.0")]
 struct Cli {
+    /// Note positions in the scale (1-based), comma-separated
+    #[arg(
+        value_delimiter = ',',
+        help = "Comma-separated note positions (e.g., 1,3,5,8). Defaults to full scale if not provided."
+    )]
+    notes: Vec<usize>,
+
     /// Scale to use for the melody
     #[arg(short, long, default_value = "major")]
     #[arg(help = "Scale: major, minor, dorian, blues, japanese, etc.")]
@@ -22,11 +29,6 @@ struct Cli {
     #[arg(short, long, default_value = "C")]
     #[arg(help = "Root note: C, D, E, F, G, A, B (with optional # for sharps)")]
     key: String,
-
-    /// Note positions in the scale (1-based)
-    #[arg(short, long, value_delimiter = ',', default_values_t = vec![1, 2, 3, 4, 5, 6, 7, 8])]
-    #[arg(help = "Comma-separated list of note positions in the scale (e.g., 1,3,5,8)")]
-    notes: Vec<usize>,
 }
 
 // Configuration struct for melody generation
@@ -121,15 +123,17 @@ fn create_melody_config(cli: &Cli) -> Result<MelodyConfig, String> {
     let note = parse_note_from_string(&cli.key)?;
     let key = Key::new(note, 4);
 
-    // Validate note positions
-    if cli.notes.is_empty() {
-        return Err("At least one note position must be provided".to_string());
-    }
+    // Use default notes if none provided (full scale)
+    let note_positions = if cli.notes.is_empty() {
+        vec![1, 2, 3, 4, 5, 6, 7, 8]
+    } else {
+        cli.notes.clone()
+    };
 
     let config = MelodyConfig {
         scale_name,
         scale_intervals,
-        note_positions: cli.notes.clone(),
+        note_positions,
         key,
     };
 
@@ -181,10 +185,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("❌ Error: {}", error);
             eprintln!("");
             eprintln!("💡 Examples:");
-            eprintln!("   cargo run -- --scale major --notes 1,2,3,4,5,6,7,8");
-            eprintln!("   cargo run -- --scale minor --key A --notes 1,3,5,8");
-            eprintln!("   cargo run -- --scale dorian --key D --notes 1,2,3,5,6");
-            eprintln!("   cargo run -- --scale japanese --notes 1,2,3,4,5");
+            eprintln!("   cargo run -- 1,2,3,4,5,6,7,8 --scale major");
+            eprintln!("   cargo run -- 1,3,5,8 --scale minor --key A");
+            eprintln!("   cargo run -- 1,2,3,5,6 --scale dorian --key D");
+            eprintln!("   cargo run -- 1,2,3,4,5 --scale japanese");
             eprintln!("");
             eprintln!("Run 'cargo run -- --help' for more information.");
             std::process::exit(1);
