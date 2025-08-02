@@ -9,8 +9,8 @@ use sound::{Key, Melody, Note};
 /// Represents different musical elements in our enhanced notation
 #[derive(Debug, Clone)]
 enum NoteElement {
-    /// A note at a specific scale position
-    Note(usize),
+    /// A note at a specific scale position with octave offset
+    Note(usize, i32), // (scale_position, octave_offset)
     /// A sixteenth-note rest
     Rest,
     /// A sixteenth-note sustain (extends the previous note)
@@ -23,9 +23,9 @@ enum NoteElement {
 #[command(about = "A CLI tool for generating and playing musical melodies")]
 #[command(version = "0.1.0")]
 struct Cli {
-    /// Enhanced note notation with rests and sustains  
+    /// Enhanced note notation with rests, sustains, and octaves
     #[arg(
-        help = "Enhanced note notation: digits 1-9 for scale positions (sixteenth-note duration), dots (.) for rests, dashes (-) extend the previous note. Consecutive digits work: '123' = notes 1,2,3. Examples: '1..35' (note 1, two rests, note 3, note 5), '12-4' (note 1, note 2 extended, note 4)"
+        help = "Enhanced note notation: digits 1-9 for scale positions, dots (.) for rests, dashes (-) extend notes, carets (^) for higher octaves, v's for lower octaves. Examples: 12345 (notes 1-5), 1^2^3^^ (note 1 up 1 octave, note 2 up 1, note 3 up 2), 1v23 (note 1 down 1 octave, notes 2-3 normal)"
     )]
     notes: Vec<String>,
 
@@ -61,14 +61,14 @@ impl Default for MelodyConfig {
             scale_name: "major".to_string(),
             scale_intervals: &interval::MAJOR_SCALE,
             note_elements: vec![
-                NoteElement::Note(1),
-                NoteElement::Note(2),
-                NoteElement::Note(3),
-                NoteElement::Note(4),
-                NoteElement::Note(5),
-                NoteElement::Note(6),
-                NoteElement::Note(7),
-                NoteElement::Note(8),
+                NoteElement::Note(1, 0),
+                NoteElement::Note(2, 0),
+                NoteElement::Note(3, 0),
+                NoteElement::Note(4, 0),
+                NoteElement::Note(5, 0),
+                NoteElement::Note(6, 0),
+                NoteElement::Note(7, 0),
+                NoteElement::Note(8, 0),
             ], // Default C major scale
             key: Key::new(Note::C, 4),
             bpm: 120,
@@ -135,8 +135,9 @@ fn parse_note_from_string(note_str: &str) -> Result<Note, String> {
 }
 
 /// Parse enhanced note notation into a sequence of NoteElement
-/// Examples: "1..3-5" -> [Note(1), Rest, Rest, Note(3), Sustain, Note(5)]
-/// "123" -> [Note(1), Note(2), Note(3)] (consecutive digits treated as separate notes)
+/// Examples: "1..3-5" -> [Note(1,0), Rest, Rest, Note(3,0), Sustain, Note(5,0)]
+/// "123" -> [Note(1,0), Note(2,0), Note(3,0)] (consecutive digits treated as separate notes)
+/// "1^2v3^^" -> [Note(1,1), Note(2,-1), Note(3,2)] (octave modifiers: ^ = +1 octave, v = -1 octave)
 fn parse_note_notation(note_strings: &[String]) -> Result<Vec<NoteElement>, String> {
     let mut elements = Vec::new();
 
@@ -148,7 +149,23 @@ fn parse_note_notation(note_strings: &[String]) -> Result<Vec<NoteElement>, Stri
                 '1'..='9' => {
                     // Each digit is treated as a separate note (1-9 only, no 0)
                     let position = ch.to_digit(10).unwrap() as usize;
-                    elements.push(NoteElement::Note(position));
+
+                    // Check for octave modifiers after the digit
+                    let mut octave_offset = 0i32;
+
+                    // Count carets (^) for higher octaves
+                    while chars.peek() == Some(&'^') {
+                        chars.next(); // consume the caret
+                        octave_offset += 1;
+                    }
+
+                    // Count v's for lower octaves
+                    while chars.peek() == Some(&'v') {
+                        chars.next(); // consume the v
+                        octave_offset -= 1;
+                    }
+
+                    elements.push(NoteElement::Note(position, octave_offset));
                 }
                 '0' => {
                     return Err("Note position 0 is invalid. Use positions 1-9.".to_string());
@@ -164,8 +181,12 @@ fn parse_note_notation(note_strings: &[String]) -> Result<Vec<NoteElement>, Stri
                 ' ' | '\t' => {
                     // Whitespace - ignore
                 }
+                '^' | 'v' => {
+                    // Octave modifiers without preceding note - this is an error
+                    return Err("Octave modifiers (^ or v) must follow a note digit".to_string());
+                }
                 _ => {
-                    return Err(format!("Invalid character '{}' in note notation. Use only digits 1-9, dots (.), and dashes (-)", ch));
+                    return Err(format!("Invalid character '{}' in note notation. Use digits 1-9, dots (.), dashes (-), carets (^), and v's for octaves", ch));
                 }
             }
         }
@@ -199,14 +220,14 @@ fn create_melody_config(cli: &Cli) -> Result<MelodyConfig, String> {
     // Parse note elements or use default
     let note_elements = if cli.notes.is_empty() {
         vec![
-            NoteElement::Note(1),
-            NoteElement::Note(2),
-            NoteElement::Note(3),
-            NoteElement::Note(4),
-            NoteElement::Note(5),
-            NoteElement::Note(6),
-            NoteElement::Note(7),
-            NoteElement::Note(8),
+            NoteElement::Note(1, 0),
+            NoteElement::Note(2, 0),
+            NoteElement::Note(3, 0),
+            NoteElement::Note(4, 0),
+            NoteElement::Note(5, 0),
+            NoteElement::Note(6, 0),
+            NoteElement::Note(7, 0),
+            NoteElement::Note(8, 0),
         ]
     } else {
         parse_note_notation(&cli.notes)?
@@ -262,7 +283,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             while i < config.note_elements.len() {
                 match &config.note_elements[i] {
-                    NoteElement::Note(position) => {
+                    NoteElement::Note(position, octave_offset) => {
                         if *position == 0 || *position > config.scale_intervals.len() {
                             println!(
                                 "⚠️  Warning: Note position {} is out of range for this scale",
@@ -271,7 +292,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             i += 1;
                             continue;
                         }
-                        let interval = config.scale_intervals[position - 1];
+                        // Calculate interval with octave offset (12 semitones per octave)
+                        let base_interval = config.scale_intervals[position - 1];
+                        let interval = base_interval + (octave_offset * 12);
 
                         // Count sustains that follow this note
                         let mut sustain_count = 0;
@@ -327,13 +350,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "   cargo run -- 12345 --scale major --bpm 120     # Notes 1,2,3,4,5 at 120 BPM"
             );
             eprintln!(
-                "   cargo run -- 1..35 --scale minor --key A --bpm 80  # Slow tempo (80 BPM)"
+                "   cargo run -- 1^2^3^ --scale minor --key A      # Notes 1,2,3 up one octave"
             );
             eprintln!(
-                "   cargo run -- 12-4 --scale dorian --key D --bpm 160 # Fast tempo (160 BPM)"
+                "   cargo run -- 1v234^ --scale dorian --key D     # Note 1 down one octave, 2,3 normal, 4 up one"
             );
             eprintln!(
-                "   cargo run -- 1.2.3.4.5 --scale japanese --bpm 100 # Notes with rests at 100 BPM"
+                "   cargo run -- 12^^34vv --scale japanese --bpm 100  # Mix: 1,2 up two octaves, 3,4 down two"
             );
             eprintln!("");
             eprintln!("Run 'cargo run -- --help' for more information.");

@@ -15,18 +15,30 @@ impl Key {
     }
 
     /// Get a note by interval from the root (0 = root, 1 = one semitone up, etc.)
+    /// Now properly handles negative intervals for lower octaves
     pub fn note_at_interval(&self, interval: i32) -> (Note, u8) {
-        if interval < 0 {
-            return (Note::Rest, 0); // Negative intervals are rests
-        }
-
-        let root_semitone = self.root.to_semitone();
+        let root_semitone = self.root.to_semitone() as i32;
         let target_semitone = root_semitone + interval;
 
-        // Calculate octave changes
-        let octave_change = target_semitone / 12;
-        let final_octave = (self.octave as i32 + octave_change) as u8;
-        let final_note = Note::from_semitone(target_semitone);
+        // Calculate octave changes (handle negative properly)
+        let octave_change = if target_semitone >= 0 {
+            target_semitone / 12
+        } else {
+            // For negative semitones, we need to go down octaves
+            (target_semitone - 11) / 12 // This ensures proper floor division
+        };
+
+        // Calculate final octave, but don't let it go below 0
+        let final_octave = ((self.octave as i32 + octave_change).max(0)) as u8;
+
+        // Calculate the note (handle negative modulo properly)
+        let note_semitone = if target_semitone >= 0 {
+            target_semitone % 12
+        } else {
+            ((target_semitone % 12) + 12) % 12 // Positive modulo for negative numbers
+        };
+
+        let final_note = Note::from_semitone(note_semitone);
 
         (final_note, final_octave)
     }
