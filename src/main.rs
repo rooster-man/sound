@@ -23,9 +23,9 @@ enum NoteElement {
 #[command(about = "A CLI tool for generating and playing musical melodies")]
 #[command(version = "0.1.0")]
 struct Cli {
-    /// Enhanced note notation with rests, sustains, and octaves
+    /// Enhanced note notation with rests, sustains, and modal octave shifts
     #[arg(
-        help = "Enhanced note notation: digits 1-9 for scale positions, dots (.) for rests, dashes (-) extend notes, carets (^) for higher octaves, v's for lower octaves. Examples: 12345 (notes 1-5), 1^2^3^^ (note 1 up 1 octave, note 2 up 1, note 3 up 2), 1v23 (note 1 down 1 octave, notes 2-3 normal)"
+        help = "Enhanced note notation: digits 1-9 for scale positions, dots (.) for rests, dashes (-) extend notes. Octave shifts: ^ (up) and v (down) change register for all following notes. Examples: 12345 (notes 1-5), 1^234 (note 1 normal, then shift up, notes 2-4 higher), 1^23v45 (1 normal, 2-3 high, 4-5 back to normal)"
     )]
     notes: Vec<String>,
 
@@ -141,38 +141,23 @@ fn parse_note_from_string(note_str: &str) -> Result<Note, String> {
     }
 }
 
-/// Parse enhanced note notation into a sequence of NoteElement
+/// Parse enhanced note notation into a sequence of NoteElement with modal octave shifting
 /// Examples: "1..3-5" -> [Note(1,0), Rest, Rest, Note(3,0), Sustain, Note(5,0)]
 /// "123" -> [Note(1,0), Note(2,0), Note(3,0)] (consecutive digits treated as separate notes)
-/// "1^2v3^^" -> [Note(1,1), Note(2,-1), Note(3,2)] (octave modifiers: ^ = +1 octave, v = -1 octave)
+/// "1^234v5" -> [Note(1,0), Note(2,1), Note(3,1), Note(4,1), Note(5,0)] (modal octave shifting)
 fn parse_note_notation(note_strings: &[String]) -> Result<Vec<NoteElement>, String> {
     let mut elements = Vec::new();
 
     for note_string in note_strings {
         let mut chars = note_string.chars().peekable();
+        let mut current_octave_offset = 0i32; // Track current octave register
 
         while let Some(ch) = chars.next() {
             match ch {
                 '1'..='9' => {
                     // Each digit is treated as a separate note (1-9 only, no 0)
                     let position = ch.to_digit(10).unwrap() as usize;
-
-                    // Check for octave modifiers after the digit
-                    let mut octave_offset = 0i32;
-
-                    // Count carets (^) for higher octaves
-                    while chars.peek() == Some(&'^') {
-                        chars.next(); // consume the caret
-                        octave_offset += 1;
-                    }
-
-                    // Count v's for lower octaves
-                    while chars.peek() == Some(&'v') {
-                        chars.next(); // consume the v
-                        octave_offset -= 1;
-                    }
-
-                    elements.push(NoteElement::Note(position, octave_offset));
+                    elements.push(NoteElement::Note(position, current_octave_offset));
                 }
                 '0' => {
                     return Err("Note position 0 is invalid. Use positions 1-9.".to_string());
@@ -185,12 +170,16 @@ fn parse_note_notation(note_strings: &[String]) -> Result<Vec<NoteElement>, Stri
                     // Add a sustain
                     elements.push(NoteElement::Sustain);
                 }
+                '^' => {
+                    // Shift octave register up by one
+                    current_octave_offset += 1;
+                }
+                'v' => {
+                    // Shift octave register down by one
+                    current_octave_offset -= 1;
+                }
                 ' ' | '\t' => {
                     // Whitespace - ignore
-                }
-                '^' | 'v' => {
-                    // Octave modifiers without preceding note - this is an error
-                    return Err("Octave modifiers (^ or v) must follow a note digit".to_string());
                 }
                 _ => {
                     return Err(format!("Invalid character '{}' in note notation. Use digits 1-9, dots (.), dashes (-), carets (^), and v's for octaves", ch));
@@ -371,13 +360,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "   cargo run -- 12345 --scale major --bpm 120     # Notes 1,2,3,4,5 at 120 BPM"
             );
             eprintln!(
-                "   cargo run -- 1^2^3^ --scale minor --key A --loop  # Notes 1,2,3 up one octave (looping)"
+                "   cargo run -- 1^234 --scale minor --key A --loop  # Note 1 normal, 2-4 up one octave (looping)"
             );
             eprintln!(
-                "   cargo run -- 1v234^ --scale dorian --key D     # Note 1 down one octave, 2,3 normal, 4 up one"
+                "   cargo run -- 1v23^45 --scale dorian --key D     # Note 1 low, 2-3 low, 4-5 high"
             );
             eprintln!(
-                "   cargo run -- 12^^34vv --scale japanese --bpm 100 --loop  # Mix octaves and loop"
+                "   cargo run -- 12^^345vv67 --scale japanese --bpm 100 --loop  # Modal octave shifts"
             );
             eprintln!("");
             eprintln!("Run 'cargo run -- --help' for more information.");
