@@ -43,6 +43,11 @@ struct Cli {
     #[arg(short, long, default_value = "120")]
     #[arg(help = "Tempo in BPM (beats per minute). Higher = faster, lower = slower")]
     bpm: u32,
+
+    /// Loop the melody continuously
+    #[arg(short, long)]
+    #[arg(help = "Play the melody in a continuous loop. Press Ctrl+C to stop")]
+    r#loop: bool,
 }
 
 // Configuration struct for melody generation
@@ -53,6 +58,7 @@ struct MelodyConfig {
     note_elements: Vec<NoteElement>,
     key: Key,
     bpm: u32,
+    should_loop: bool,
 }
 
 impl Default for MelodyConfig {
@@ -72,6 +78,7 @@ impl Default for MelodyConfig {
             ], // Default C major scale
             key: Key::new(Note::C, 4),
             bpm: 120,
+            should_loop: false,
         }
     }
 }
@@ -201,8 +208,8 @@ fn parse_note_notation(note_strings: &[String]) -> Result<Vec<NoteElement>, Stri
 
 fn create_melody_config(cli: &Cli) -> Result<MelodyConfig, String> {
     println!(
-        "CLI args: scale={}, key={}, notes={:?}, bpm={}",
-        cli.scale, cli.key, cli.notes, cli.bpm
+        "CLI args: scale={}, key={}, notes={:?}, bpm={}, loop={}",
+        cli.scale, cli.key, cli.notes, cli.bpm, cli.r#loop
     );
 
     // Validate BPM range
@@ -239,6 +246,7 @@ fn create_melody_config(cli: &Cli) -> Result<MelodyConfig, String> {
         note_elements,
         key,
         bpm: cli.bpm,
+        should_loop: cli.r#loop,
     };
 
     Ok(config)
@@ -276,8 +284,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Calculate durations based on BPM
             let (_quarter_note_duration, sixteenth_note_duration) = calculate_durations(config.bpm);
 
-            // Create and play the custom melody
-            println!("\n🎶 Playing your custom melody at {} BPM...", config.bpm);
+            // Build the melody once
             let mut melody = Melody::in_key(config.key);
             let mut i = 0;
 
@@ -333,12 +340,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
-            melody.play(&sink, sample_rate);
-
-            // Calculate sleep duration based on elements (BPM-accurate)
+            // Calculate sleep duration for one iteration
             let total_elements = config.note_elements.len();
-            let duration_ms = total_elements as u64 * sixteenth_note_duration.as_millis() as u64;
-            std::thread::sleep(Duration::from_millis(duration_ms));
+            let iteration_duration_ms =
+                total_elements as u64 * sixteenth_note_duration.as_millis() as u64;
+
+            // Play the melody (looping if requested)
+            if config.should_loop {
+                println!(
+                    "\n🔄 Playing your custom melody at {} BPM (looping - press Ctrl+C to stop)...",
+                    config.bpm
+                );
+                loop {
+                    melody.play(&sink, sample_rate);
+                    std::thread::sleep(Duration::from_millis(iteration_duration_ms));
+                }
+            } else {
+                println!("\n🎶 Playing your custom melody at {} BPM...", config.bpm);
+                melody.play(&sink, sample_rate);
+                std::thread::sleep(Duration::from_millis(iteration_duration_ms));
+            }
 
             println!("✨ Custom melody complete!");
         }
@@ -350,13 +371,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "   cargo run -- 12345 --scale major --bpm 120     # Notes 1,2,3,4,5 at 120 BPM"
             );
             eprintln!(
-                "   cargo run -- 1^2^3^ --scale minor --key A      # Notes 1,2,3 up one octave"
+                "   cargo run -- 1^2^3^ --scale minor --key A --loop  # Notes 1,2,3 up one octave (looping)"
             );
             eprintln!(
                 "   cargo run -- 1v234^ --scale dorian --key D     # Note 1 down one octave, 2,3 normal, 4 up one"
             );
             eprintln!(
-                "   cargo run -- 12^^34vv --scale japanese --bpm 100  # Mix: 1,2 up two octaves, 3,4 down two"
+                "   cargo run -- 12^^34vv --scale japanese --bpm 100 --loop  # Mix octaves and loop"
             );
             eprintln!("");
             eprintln!("Run 'cargo run -- --help' for more information.");
