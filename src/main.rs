@@ -24,9 +24,9 @@ enum NoteElement {
 #[command(about = "A CLI tool for generating and playing musical melodies")]
 #[command(version = "0.1.0")]
 struct Cli {
-    /// Enhanced note notation with rests and sustains
+    /// Enhanced note notation with rests and sustains  
     #[arg(
-        help = "Enhanced note notation: numbers for scale positions (sixteenth-note duration), dots (.) for rests, dashes (-) extend the previous note. Examples: '1..3-5' (note 1, two rests, note 3 extended, note 5), '1--2' (note 1 extended by 2 sixteenths, note 2). Space-separated: '1 2.. 3-'"
+        help = "Enhanced note notation: digits 1-9 for scale positions (sixteenth-note duration), dots (.) for rests, dashes (-) extend the previous note. Consecutive digits work: '123' = notes 1,2,3. Examples: '1..35' (note 1, two rests, note 3, note 5), '12-4' (note 1, note 2 extended, note 4)"
     )]
     notes: Vec<String>,
 
@@ -102,7 +102,6 @@ fn get_scale_by_name(name: &str) -> Result<(&'static [i32], String), String> {
         "arabic" => Ok((&interval::ARABIC_MAQAM, "Arabic Maqam".to_string())),
         "spanish" => Ok((&interval::SPANISH_GYPSY, "Spanish Gypsy".to_string())),
         "whole_tone" | "wholetone" => Ok((&interval::WHOLE_TONE, "Whole Tone".to_string())),
-        "chromatic" => Ok((&interval::CHROMATIC, "Chromatic".to_string())),
 
         _ => Err(format!(
             "Unknown scale: {}. Try: major, minor, dorian, blues, japanese, etc.",
@@ -131,76 +130,38 @@ fn parse_note_from_string(note_str: &str) -> Result<Note, String> {
 
 /// Parse enhanced note notation into a sequence of NoteElement
 /// Examples: "1..3-5" -> [Note(1), Rest, Rest, Note(3), Sustain, Note(5)]
+/// "123" -> [Note(1), Note(2), Note(3)] (consecutive digits treated as separate notes)
 fn parse_note_notation(note_strings: &[String]) -> Result<Vec<NoteElement>, String> {
     let mut elements = Vec::new();
 
     for note_string in note_strings {
         let mut chars = note_string.chars().peekable();
-        let mut current_number = String::new();
 
         while let Some(ch) = chars.next() {
             match ch {
-                '0'..='9' => {
-                    current_number.push(ch);
+                '1'..='9' => {
+                    // Each digit is treated as a separate note (1-9 only, no 0)
+                    let position = ch.to_digit(10).unwrap() as usize;
+                    elements.push(NoteElement::Note(position));
+                }
+                '0' => {
+                    return Err("Note position 0 is invalid. Use positions 1-9.".to_string());
                 }
                 '.' => {
-                    // If we have a number, add it first
-                    if !current_number.is_empty() {
-                        let position: usize = current_number
-                            .parse()
-                            .map_err(|_| format!("Invalid note position: {}", current_number))?;
-                        if position == 0 {
-                            return Err("Note positions must be 1 or greater".to_string());
-                        }
-                        elements.push(NoteElement::Note(position));
-                        current_number.clear();
-                    }
                     // Add a rest
                     elements.push(NoteElement::Rest);
                 }
                 '-' => {
-                    // If we have a number, add it first
-                    if !current_number.is_empty() {
-                        let position: usize = current_number
-                            .parse()
-                            .map_err(|_| format!("Invalid note position: {}", current_number))?;
-                        if position == 0 {
-                            return Err("Note positions must be 1 or greater".to_string());
-                        }
-                        elements.push(NoteElement::Note(position));
-                        current_number.clear();
-                    }
                     // Add a sustain
                     elements.push(NoteElement::Sustain);
                 }
                 ' ' | '\t' => {
-                    // Whitespace - if we have a number, add it
-                    if !current_number.is_empty() {
-                        let position: usize = current_number
-                            .parse()
-                            .map_err(|_| format!("Invalid note position: {}", current_number))?;
-                        if position == 0 {
-                            return Err("Note positions must be 1 or greater".to_string());
-                        }
-                        elements.push(NoteElement::Note(position));
-                        current_number.clear();
-                    }
+                    // Whitespace - ignore
                 }
                 _ => {
-                    return Err(format!("Invalid character '{}' in note notation. Use only numbers, dots (.), and dashes (-)", ch));
+                    return Err(format!("Invalid character '{}' in note notation. Use only digits 1-9, dots (.), and dashes (-)", ch));
                 }
             }
-        }
-
-        // Add any remaining number
-        if !current_number.is_empty() {
-            let position: usize = current_number
-                .parse()
-                .map_err(|_| format!("Invalid note position: {}", current_number))?;
-            if position == 0 {
-                return Err("Note positions must be 1 or greater".to_string());
-            }
-            elements.push(NoteElement::Note(position));
         }
     }
 
@@ -267,7 +228,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("✅ Successfully parsed melody configuration:");
             println!("  🎼 Scale: {}", config.scale_name);
             println!("  🎹 Key: {:?}", config.key.root);
-            println!("  🎵 Note elements: {:?}", config.note_elements);
 
             // Create and play the custom melody
             println!("\n🎶 Playing your custom melody...");
@@ -337,9 +297,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("❌ Error: {}", error);
             eprintln!("");
             eprintln!("💡 Examples:");
-            eprintln!("   cargo run -- 1..3-5 --scale major        # Note 1, two rests, note 3 extended, note 5");
-            eprintln!("   cargo run -- 1--2.4 --scale minor --key A  # Note 1 extended (2 sixteenths), note 2, rest, note 4");
-            eprintln!("   cargo run -- '1 2.. 3-' --scale dorian --key D  # Note 1, note 2, two rests, note 3 extended");
+            eprintln!("   cargo run -- 12345 --scale major         # Notes 1,2,3,4,5 (consecutive digits)");
+            eprintln!("   cargo run -- 1..35 --scale minor --key A    # Note 1, two rests, note 3, note 5");
+            eprintln!(
+                "   cargo run -- 12-4 --scale dorian --key D    # Note 1, note 2 extended, note 4"
+            );
             eprintln!(
                 "   cargo run -- 1.2.3.4.5 --scale japanese    # Notes with rests between each"
             );
