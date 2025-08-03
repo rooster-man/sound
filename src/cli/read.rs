@@ -19,8 +19,9 @@ pub fn read(args: &Args) {
     // File hosts.txt must exist in the current path
     if let Ok(lines) = read_lines(args.notes.first().unwrap()) {
         // Consumes the iterator, returns an (Optional) String
-        for line in lines.map_while(Result::ok) {
+        for mut line in lines.map_while(Result::ok) {
             let mut a = args.clone();
+            line.retain(|c| !c.is_whitespace());
             a.notes = vec![line];
             let config = create_melody_config(&a).unwrap();
             let melody = Melody::new(config);
