@@ -1,6 +1,6 @@
 //! Musical key system for interval-based composition
 
-use crate::note::Note;
+use super::note::Note;
 
 /// Represents a musical key with a root note and octave
 #[derive(Debug, Clone, Copy)]

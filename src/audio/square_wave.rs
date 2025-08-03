@@ -1,8 +1,8 @@
 //! Audio generation and square wave synthesis
 
+use crate::music::note::MusicNote;
 use rodio::Source;
 use std::time::Duration;
-use crate::note::MusicNote;
 
 /// Square wave audio generator
 pub struct SquareWave {

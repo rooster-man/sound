@@ -18,14 +18,16 @@
 //! ```
 
 pub mod audio;
-pub mod duration;
-pub mod interval;
-pub mod key;
-pub mod melody;
-pub mod note;
+pub mod cli;
+// pub mod interval;
+// pub mod key;
+// pub mod melody;
+pub mod music;
+// pub mod note;
 
 // Re-export main types for convenience
-pub use audio::SquareWave;
-pub use key::Key;
-pub use melody::Melody;
-pub use note::{MusicNote, Note};
+pub use audio::square_wave::SquareWave;
+pub use music::key::Key;
+pub use music::melody::{Melody, MelodyConfig, NoteElement};
+pub use music::note::{MusicNote, Note};
+pub use music::util::{get_scale_by_name, parse_note_from_string, parse_note_notation};
