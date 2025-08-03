@@ -51,7 +51,9 @@ struct Cli {
 
     /// Base duration for each note symbol
     #[arg(short, long, default_value = "sixteenth")]
-    #[arg(help = "Duration each note symbol represents: whole, half, quarter, eighth, sixteenth")]
+    #[arg(
+        help = "Duration each note symbol represents: whole/1, half/2, quarter/4, eighth/8, sixteenth/16"
+    )]
     duration: String,
 }
 
@@ -215,10 +217,11 @@ fn create_melody_config(cli: &Cli) -> Result<MelodyConfig, String> {
 
     // Validate duration
     match cli.duration.to_lowercase().as_str() {
-        "whole" | "half" | "quarter" | "eighth" | "sixteenth" => {}
+        "whole" | "1" | "half" | "2" | "quarter" | "4" | "eighth" | "8" | "sixteenth" | "16" => {}
         _ => {
             return Err(
-                "Duration must be one of: whole, half, quarter, eighth, sixteenth".to_string(),
+                "Duration must be one of: whole/1, half/2, quarter/4, eighth/8, sixteenth/16"
+                    .to_string(),
             )
         }
     }
@@ -266,11 +269,11 @@ fn calculate_durations(bpm: u32, base_duration: &str) -> (Duration, Duration) {
 
     // Calculate base duration based on the specified type
     let base_duration_ms = match base_duration.to_lowercase().as_str() {
-        "whole" => quarter_note_ms * 4,
-        "half" => quarter_note_ms * 2,
-        "quarter" => quarter_note_ms,
-        "eighth" => quarter_note_ms / 2,
-        "sixteenth" => quarter_note_ms / 4,
+        "whole" | "1" => quarter_note_ms * 4,
+        "half" | "2" => quarter_note_ms * 2,
+        "quarter" | "4" => quarter_note_ms,
+        "eighth" | "8" => quarter_note_ms / 2,
+        "sixteenth" | "16" => quarter_note_ms / 4,
         _ => quarter_note_ms / 4, // fallback to sixteenth
     };
 
@@ -390,13 +393,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "   cargo run -- 12345 --scale major --bpm 120     # Notes 1,2,3,4,5 at 120 BPM (sixteenth notes)"
             );
             eprintln!(
-                "   cargo run -- 1^234 --scale minor --key A --duration quarter  # Quarter note duration"
+                "   cargo run -- 1^234 --scale minor --key A --duration 4  # Quarter note duration"
             );
             eprintln!(
-                "   cargo run -- 1v23^45 --scale dorian --key D --duration eighth  # Eighth note duration"
+                "   cargo run -- 1v23^45 --scale dorian --key D --duration 8  # Eighth note duration"
             );
             eprintln!(
-                "   cargo run -- 12345 --duration whole --bpm 60 --loop  # Very slow with whole notes"
+                "   cargo run -- 12345 --duration 1 --bpm 60 --loop  # Very slow with whole notes"
             );
             eprintln!("");
             eprintln!("Run 'cargo run -- --help' for more information.");
