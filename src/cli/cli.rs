@@ -1,4 +1,4 @@
-use super::{args::Args, play::play};
+use super::{args::Args, play::play, read::read};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -28,7 +28,7 @@ pub fn run_cli() {
             play(&args);
         }
         Some(Commands::Read(args)) => {
-            println!("Reading melody");
+            read(&args);
         }
         None => {
             play(&cli.args);

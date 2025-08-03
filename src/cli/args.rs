@@ -5,6 +5,7 @@ use clap::Parser;
 #[command(name = "sound")]
 #[command(about = "A CLI tool for generating and playing musical melodies")]
 #[command(version = "0.1.0")]
+#[derive(Clone)]
 pub struct Args {
     /// Enhanced note notation with rests, sustains, and modal octave shifts
     #[arg(

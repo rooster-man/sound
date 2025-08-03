@@ -67,7 +67,7 @@ pub fn play(args: &Args) {
     }
 }
 
-fn create_melody_config(args: &Args) -> Result<MelodyConfig, String> {
+pub fn create_melody_config(args: &Args) -> Result<MelodyConfig, String> {
     println!(
         "CLI args: scale={}, key={}, notes={:?}, bpm={}, loop={}, duration={}",
         args.scale, args.key, args.notes, args.bpm, args.r#loop, args.duration
