@@ -5,6 +5,9 @@ use clap::{Parser, Subcommand};
 #[command(author, version, about, long_about = None)]
 #[command(propagate_version = true)]
 struct Cli {
+    #[command(flatten)]
+    args: Args,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -28,7 +31,7 @@ pub fn run_cli() {
             println!("Reading melody");
         }
         None => {
-            println!("No command provided")
+            play(&cli.args);
         }
     }
 }
