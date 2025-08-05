@@ -1,8 +1,8 @@
 use super::args::Args;
 use crate::audio::square_wave::SquareWave;
-use crate::music::interval;
 use crate::music::key::Key;
 use crate::music::note::{MusicNote, Note};
+use crate::music::util::get_scale_by_name;
 use crossterm::event::{
     read, Event, KeyCode, KeyEventKind, KeyModifiers, KeyboardEnhancementFlags,
     PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
@@ -10,29 +10,28 @@ use crossterm::event::{
 
 use crossterm::execute;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
-use rodio::{cpal::BufferSize, OutputStreamBuilder, Sink, Source};
+use rodio::{
+    cpal::{traits::*, BufferSize, SupportedBufferSize},
+    source::{LimitSettings, SawtoothWave, SineWave},
+    OutputStream, OutputStreamBuilder, Sink, Source,
+};
 use std::collections::HashMap;
 use std::time::Duration;
 
-pub fn jam(_args: &Args) -> Result<(), Box<dyn std::error::Error>> {
-    let stream_handle = OutputStreamBuilder::from_default_device()?
-        .with_buffer_size(BufferSize::Fixed(512))
-        .open_stream()?;
+pub fn jam(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
+    let mut key = Key::new(Note::C, 4);
+    let (scale_intervals, _scale_name) = get_scale_by_name(&args.scale)?;
+
+    let stream_handle = build_stream_handle()?;
 
     enable_raw_mode()?;
-
     let mut stdout = std::io::stdout();
-
     execute!(
         stdout,
         PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::REPORT_EVENT_TYPES)
     )?;
 
     let mut active_keys: HashMap<(KeyCode, KeyModifiers), Sink> = HashMap::new();
-
-    let key = Key::new(Note::C, 4);
-    let minor_scale = interval::MINOR_SCALE;
-
     loop {
         if let Event::Key(key_event) = read()? {
             let key_id = (key_event.code, key_event.modifiers);
@@ -45,24 +44,37 @@ pub fn jam(_args: &Args) -> Result<(), Box<dyn std::error::Error>> {
                         break;
                     }
 
+                    if key_event.code == KeyCode::Up {
+                        key.octave += 1;
+                    }
+                    if key_event.code == KeyCode::Down {
+                        key.octave -= 1;
+                    }
+
                     if let KeyCode::Char(c) = key_event.code {
-                        if c.is_ascii_digit() && c >= '1' && c <= '7' {
+                        if c.is_ascii_digit() && c >= '1' && c <= '8' {
                             if !active_keys.contains_key(&key_id) {
                                 let scale_index = c.to_digit(10).unwrap() as usize - 1;
 
                                 let note = MusicNote::from_key_interval(
                                     &key,
-                                    minor_scale[scale_index],
+                                    scale_intervals[scale_index],
                                     Duration::from_secs(10),
                                 );
 
                                 let square_wave = SquareWave::from_note(&note, 44100);
                                 let sink = Sink::connect_new(&stream_handle.mixer());
+                                let sine_wave = SineWave::new(note.frequency());
 
-                                sink.append(square_wave.repeat_infinite());
+                                let settings = LimitSettings::default()
+                                    .with_threshold(-6.0) // -6 dBFS threshold
+                                    .with_attack(Duration::from_millis(5))
+                                    .with_release(Duration::from_millis(100));
+
+                                let limited = sine_wave.limit(settings);
+
+                                sink.append(limited);
                                 active_keys.insert(key_id, sink);
-
-                                println!("Playing note {}", c);
                             }
                         }
                     }
@@ -70,9 +82,6 @@ pub fn jam(_args: &Args) -> Result<(), Box<dyn std::error::Error>> {
                 KeyEventKind::Release => {
                     if let Some(sink) = active_keys.remove(&key_id) {
                         sink.stop();
-                        if let KeyCode::Char(c) = key_event.code {
-                            println!("Stopped note {}", c);
-                        }
                     }
                 }
                 _ => {}
@@ -89,4 +98,44 @@ pub fn jam(_args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     println!("\nGoodbye!");
 
     Ok(())
+}
+
+fn build_stream_handle() -> Result<OutputStream, Box<dyn std::error::Error>> {
+    let host = rodio::cpal::default_host();
+    let device = host
+        .default_output_device()
+        .ok_or("No default output device found")?;
+
+    println!("Audio Device: {}", device.name()?);
+
+    let mut stream_handle = OutputStreamBuilder::from_default_device()?;
+    // Get supported configurations
+    let mut supported_configs = device.supported_output_configs()?;
+    if let Some(config) = supported_configs.next() {
+        println!(
+            "Sample Rate Range: {} - {} Hz",
+            config.min_sample_rate().0,
+            config.max_sample_rate().0
+        );
+        println!("Channels: {}", config.channels());
+
+        match config.buffer_size() {
+            SupportedBufferSize::Range { min, max } => {
+                println!("Supported Buffer Size Range: {} - {} frames", min, max);
+                stream_handle = stream_handle.with_buffer_size(BufferSize::Fixed(*min));
+            }
+            SupportedBufferSize::Unknown => {
+                println!("Buffer Size: Unknown");
+            }
+        }
+    }
+
+    let stream_handle = stream_handle.open_stream()?;
+
+    println!(
+        "Using Buffer Size: {:?}",
+        &stream_handle.config().buffer_size()
+    );
+
+    Ok(stream_handle)
 }
