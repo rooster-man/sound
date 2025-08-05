@@ -26,11 +26,12 @@ pub fn jam(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🎹 Multi-Octave Jam Mode 🎹");
     println!("Scale: {}", args.scale);
     println!("Base key: {:?} (octave {})", key.root, key.octave);
-    println!("\nKeyboard Layout:");
-    println!("  Numbers 1-8:  Octave {} (base)", key.octave);
-    println!("  QWERTYUI:     Octave {} (+1)", key.octave + 1);
-    println!("  ASDFGHJK:     Octave {} (+2)", key.octave + 2);
-    println!("  ZXCVBNM,:     Octave {} (+3)", key.octave + 3);
+    let scale_notes = scale_intervals.len() - 1; // Exclude octave
+    println!("\nKeyboard Layout ({} notes per row):", scale_notes);
+    println!("  Numbers 1-{}:  Octave {} (base)", scale_notes, key.octave);
+    println!("  QWERTYUI:      Octave {} (+1)", key.octave + 1);
+    println!("  ASDFGHJK:      Octave {} (+2)", key.octave + 2);
+    println!("  ZXCVBNM,:      Octave {} (+3)", key.octave + 3);
     println!("\nControls:");
     println!("  ↑/↓ arrows: Change base octave");
     println!("  Ctrl+C: Exit");
@@ -66,43 +67,11 @@ pub fn jam(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
                     }
 
                     if let KeyCode::Char(c) = key_event.code {
-                        let (octave_offset, scale_index_opt) = match c.to_ascii_lowercase() {
-                            '1'..='8' => (0, Some(c.to_digit(10).unwrap() as usize - 1)),
-
-                            'q' => (1, Some(0)),
-                            'w' => (1, Some(1)),
-                            'e' => (1, Some(2)),
-                            'r' => (1, Some(3)),
-                            't' => (1, Some(4)),
-                            'y' => (1, Some(5)),
-                            'u' => (1, Some(6)),
-                            'i' => (1, Some(7)),
-
-                            'a' => (2, Some(0)),
-                            's' => (2, Some(1)),
-                            'd' => (2, Some(2)),
-                            'f' => (2, Some(3)),
-                            'g' => (2, Some(4)),
-                            'h' => (2, Some(5)),
-                            'j' => (2, Some(6)),
-                            'k' => (2, Some(7)),
-
-                            'z' => (3, Some(0)),
-                            'x' => (3, Some(1)),
-                            'c' => (3, Some(2)),
-                            'v' => (3, Some(3)),
-                            'b' => (3, Some(4)),
-                            'n' => (3, Some(5)),
-                            'm' => (3, Some(6)),
-                            ',' => (3, Some(7)),
-
-                            _ => (0, None),
-                        };
+                        let (octave_offset, scale_index_opt) =
+                            get_key_mapping(c, scale_intervals.len() - 1);
 
                         if let Some(scale_index) = scale_index_opt {
-                            if scale_index < scale_intervals.len()
-                                && !active_keys.contains_key(&key_id)
-                            {
+                            if !active_keys.contains_key(&key_id) {
                                 let note_key = Key::new(key.root, key.octave + octave_offset);
                                 let note = MusicNote::from_key_interval(
                                     &note_key,
@@ -191,4 +160,41 @@ fn build_stream_handle() -> Result<OutputStream, Box<dyn std::error::Error>> {
     );
 
     Ok(stream_handle)
+}
+
+fn get_key_mapping(c: char, scale_length: usize) -> (u8, Option<usize>) {
+    // Define the keyboard layout for each row
+    let number_keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
+    let qwerty_keys = ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'];
+    let asdf_keys = ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';'];
+    let zxcv_keys = ['z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/'];
+
+    let c_lower = c.to_ascii_lowercase();
+
+    // Check each row and return (octave_offset, scale_index) if within scale_length
+    if let Some(pos) = number_keys.iter().position(|&k| k == c_lower) {
+        if pos < scale_length {
+            return (0, Some(pos));
+        }
+    }
+
+    if let Some(pos) = qwerty_keys.iter().position(|&k| k == c_lower) {
+        if pos < scale_length {
+            return (1, Some(pos));
+        }
+    }
+
+    if let Some(pos) = asdf_keys.iter().position(|&k| k == c_lower) {
+        if pos < scale_length {
+            return (2, Some(pos));
+        }
+    }
+
+    if let Some(pos) = zxcv_keys.iter().position(|&k| k == c_lower) {
+        if pos < scale_length {
+            return (3, Some(pos));
+        }
+    }
+
+    (0, None)
 }
