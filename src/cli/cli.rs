@@ -1,4 +1,4 @@
-use super::{args::Args, play::play, read::read};
+use super::{args::Args, jam::jam, play::play, read::read};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -18,6 +18,8 @@ enum Commands {
     Play(Args),
     /// Read a melody from a file
     Read(Args),
+    /// Jam a melody
+    Jam(Args),
 }
 
 pub fn run_cli() {
@@ -29,6 +31,11 @@ pub fn run_cli() {
         }
         Some(Commands::Read(args)) => {
             read(&args);
+        }
+        Some(Commands::Jam(args)) => {
+            if let Err(e) = jam(&args) {
+                eprintln!("Error in jam mode: {}", e);
+            }
         }
         None => {
             play(&cli.args);

@@ -14,3 +14,4 @@ path = "src/main.rs"
 [dependencies]
 rodio = "0.21.1"
 clap = { version = "4.5.42", features = ["derive"] }
+crossterm = "0.29.0"
