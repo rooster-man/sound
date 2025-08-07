@@ -1,1 +1,3 @@
-pub mod square_wave;
+pub mod pulse;
+pub mod square;
+pub mod triangle;

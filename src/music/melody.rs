@@ -1,6 +1,6 @@
 //! Melody composition and playback
 
-use crate::{music::interval, Key, MusicNote, Note, SquareWave};
+use crate::{music::interval, Key, MusicNote, Note, Square};
 use rodio::Sink;
 use std::time::Duration;
 
@@ -150,7 +150,7 @@ impl Melody {
     /// Play the melody using the provided sink
     pub fn play(&self, sink: &Sink) {
         for note in &self.notes {
-            let square_wave = SquareWave::from_note(note, self.sample_rate);
+            let square_wave = Square::from_note(note, self.sample_rate);
             sink.append(square_wave);
         }
     }

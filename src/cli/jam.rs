@@ -1,4 +1,7 @@
 use super::args::Args;
+use crate::audio::pulse::Pulse;
+use crate::audio::square::Square;
+use crate::audio::triangle::Triangle;
 use crate::music::key::Key;
 use crate::music::note::{MusicNote, Note};
 use crate::music::util::get_scale_by_name;
@@ -66,11 +69,9 @@ pub fn jam(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
 
                     if key_event.code == KeyCode::Up {
                         key.octave += 1;
-                        println!("Base octave: {}", key.octave);
                     }
                     if key_event.code == KeyCode::Down {
                         key.octave -= 1;
-                        println!("Base octave: {}", key.octave);
                     }
 
                     if let KeyCode::Char(c) = key_event.code {
@@ -88,22 +89,21 @@ pub fn jam(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
 
                                 let sink = Sink::connect_new(&stream_handle.mixer());
                                 let sine_wave = SineWave::new(note.frequency());
+                                let square_wave = Square::infinite(note.frequency(), 41000);
+                                let pulse_wave =
+                                    Pulse::new(note.frequency(), 41000, Duration::from_secs(10));
+                                let triangle_wave =
+                                    Triangle::new(note.frequency(), 41000, Duration::from_secs(10));
 
                                 let settings = LimitSettings::default()
                                     .with_threshold(-6.0) // -6 dBFS threshold
                                     .with_attack(Duration::from_millis(5))
                                     .with_release(Duration::from_millis(100));
 
-                                let limited = sine_wave.limit(settings);
+                                let limited = square_wave.limit(settings);
 
                                 sink.append(limited);
                                 active_keys.insert(key_id, sink);
-
-                                println!(
-                                    "Playing note {} (octave {})",
-                                    scale_index + 1,
-                                    note_key.octave
-                                );
                             }
                         } else {
                             // Check for chord mapping - use relative major chords for minor scales
@@ -357,7 +357,7 @@ fn play_chord(stream_handle: &rodio::OutputStream, base_key: &Key, intervals: &[
         let note = MusicNote::from_key_interval(base_key, interval, Duration::from_secs(10));
 
         let sink = Sink::connect_new(&stream_handle.mixer());
-        let sine_wave = SineWave::new(note.frequency());
+        let sine_wave = Pulse::new(note.frequency(), 41000, Duration::from_secs(10));
 
         let settings = LimitSettings::default()
             .with_threshold(-6.0)

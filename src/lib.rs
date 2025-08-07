@@ -26,7 +26,7 @@ pub mod music;
 // pub mod note;
 
 // Re-export main types for convenience
-pub use audio::square_wave::SquareWave;
+pub use audio::square::Square;
 pub use music::key::Key;
 pub use music::melody::{Melody, MelodyConfig, NoteElement};
 pub use music::note::{MusicNote, Note};
