@@ -18,6 +18,11 @@ pub struct Args {
     #[arg(help = "Scale: major, minor, dorian, blues, japanese, etc.")]
     pub scale: String,
 
+    /// Wave form to use
+    #[arg(short, long, default_value = "sine")]
+    #[arg(help = "sine, triangle, square, pulse, sawtooth")]
+    pub wave: String,
+
     /// Key/root note for the melody
     #[arg(short, long, default_value = "C")]
     #[arg(help = "Root note: C, D, E, F, G, A, B (with optional # for sharps)")]

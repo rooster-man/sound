@@ -10,6 +10,7 @@ use crossterm::event::{
     PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
 };
 
+use crate::audio::wave::{get_wave_type, Wave};
 use crossterm::execute;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use rodio::{
@@ -26,27 +27,6 @@ pub fn jam(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
 
     let stream_handle = build_stream_handle()?;
 
-    println!("\n🎹 Chord-Scale Jazz Mode 🎹");
-    println!("Melody Scale: {}", args.scale);
-    println!("Base key: {:?} (octave {})", key.root, key.octave);
-    let scale_notes = (scale_intervals.len() - 1).min(7); // Cap at 7 notes, exclude octave
-    println!("\nMelody Notes ({} notes per row):", scale_notes);
-    println!("  Numbers 1-{}:  Octave {} (base)", scale_notes, key.octave);
-    println!("  QWERTYUI:      Octave {} (+1)", key.octave + 1);
-    println!("  ASDFGHJK:      Octave {} (+2)", key.octave + 2);
-    println!("  ZXCVBNM,:      Octave {} (+3)", key.octave + 3);
-    println!("\nChords (-=[]\\;'):");
-    print_chord_progression(&key, &scale_intervals, &args.scale);
-    println!("\nTip: Play chords with right hand, improvise melodies with left hand!");
-    println!(
-        "The {} scale works great over these chord progressions.",
-        args.scale
-    );
-    println!("\nControls:");
-    println!("  ↑/↓ arrows: Change base octave");
-    println!("  Ctrl+C: Exit");
-    println!("\nPress and hold keys to play notes...\n");
-
     enable_raw_mode()?;
     let mut stdout = std::io::stdout();
     execute!(
@@ -61,12 +41,14 @@ pub fn jam(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
 
             match key_event.kind {
                 KeyEventKind::Press => {
+                    // Exit on Ctrl+C
                     if key_event.code == KeyCode::Char('c')
                         && key_event.modifiers.contains(KeyModifiers::CONTROL)
                     {
                         break;
                     }
 
+                    // Change octave
                     if key_event.code == KeyCode::Up {
                         key.octave += 1;
                     }
@@ -74,6 +56,7 @@ pub fn jam(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
                         key.octave -= 1;
                     }
 
+                    // Play note
                     if let KeyCode::Char(c) = key_event.code {
                         let (octave_offset, scale_index_opt) =
                             get_key_mapping(c, (scale_intervals.len() - 1).min(7));
@@ -88,19 +71,18 @@ pub fn jam(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
                                 );
 
                                 let sink = Sink::connect_new(&stream_handle.mixer());
-                                let sine_wave = SineWave::new(note.frequency());
-                                let square_wave = Square::infinite(note.frequency(), 41000);
-                                let pulse_wave =
-                                    Pulse::new(note.frequency(), 41000, Duration::from_secs(10));
-                                let triangle_wave =
-                                    Triangle::new(note.frequency(), 41000, Duration::from_secs(10));
+                                let wave = Wave::infinite(
+                                    get_wave_type(&args.wave),
+                                    note.frequency(),
+                                    44100,
+                                );
 
                                 let settings = LimitSettings::default()
                                     .with_threshold(-6.0) // -6 dBFS threshold
                                     .with_attack(Duration::from_millis(5))
                                     .with_release(Duration::from_millis(100));
 
-                                let limited = square_wave.limit(settings);
+                                let limited = wave.limit(settings);
 
                                 sink.append(limited);
                                 active_keys.insert(key_id, sink);

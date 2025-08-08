@@ -48,6 +48,14 @@ impl Square {
     pub fn from_note(note: &MusicNote, sample_rate: u32) -> Self {
         Self::finite(note.frequency(), sample_rate, note.duration)
     }
+
+    fn wave_function(&self, phase: f32) -> f32 {
+        if phase % 1.0f32 < 0.5f32 {
+            1.0f32
+        } else {
+            -1.0f32
+        }
+    }
 }
 
 impl Iterator for Square {
